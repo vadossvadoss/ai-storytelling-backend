@@ -9,9 +9,49 @@ import { authRouter } from "./routes/auth.js";
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 
+const defaultOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+
+function getAllowedOrigins(): string[] {
+  const origins = new Set(defaultOrigins);
+
+  if (process.env.FRONTEND_URL) {
+    origins.add(process.env.FRONTEND_URL.replace(/\/$/, ""));
+  }
+
+  if (process.env.CORS_ORIGINS) {
+    for (const origin of process.env.CORS_ORIGINS.split(",")) {
+      const trimmed = origin.trim();
+      if (trimmed) origins.add(trimmed);
+    }
+  }
+
+  return [...origins];
+}
+
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin(origin, callback) {
+      // Allow non-browser clients (curl, health checks)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      const allowed = getAllowedOrigins();
+      if (allowed.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      // Vercel production + preview deployments
+      if (/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.vercel\.app$/.test(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      console.warn("[cors] blocked origin:", origin);
+      callback(new Error(`CORS blocked: ${origin}`));
+    },
     credentials: true,
   })
 );
@@ -42,5 +82,5 @@ app.listen(PORT, () => {
   const key = process.env.ANTHROPIC_API_KEY;
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`ANTHROPIC_API_KEY: ${key ? `loaded (${key.slice(0, 12)}...)` : "NOT SET"}`);
-  console.log("[server] dev mode: tsx watch — edits to src/ auto-reload (restart if changes don't appear)");
+  console.log("[cors] allowed origins:", getAllowedOrigins().join(", "), "+ *.vercel.app");
 });
