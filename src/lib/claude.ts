@@ -1,44 +1,74 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logError } from "./log-error.js";
+import { delayBeforeToken, splitForTyping, getTypingDelayRange } from "./typing-delay.js";
 
-const client = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
+const MODEL = "claude-sonnet-4-6";
+
+function getClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not configured");
+  }
+  return new Anthropic({ apiKey });
+}
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
-export interface GenerateResponseOptions {
-  systemPrompt?: string;
+export interface StreamResponseOptions {
+  systemPrompt: string;
   messages: ChatMessage[];
   maxTokens?: number;
+  onToken: (token: string) => void;
 }
 
-export async function generateResponse(
-  options: GenerateResponseOptions
+export async function streamResponse(
+  options: StreamResponseOptions
 ): Promise<string> {
-  const { systemPrompt, messages, maxTokens = 1024 } = options;
+  const { systemPrompt, messages, maxTokens = 1024, onToken } = options;
+  const client = getClient();
 
-  if (!client) {
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
-    return `[Mock response] I heard you say: "${lastUserMessage?.content ?? "..."}". Connect ANTHROPIC_API_KEY to get real AI responses.`;
+  const { min, max } = getTypingDelayRange();
+  console.log("[claude] Streaming — model:", MODEL, "messages:", messages.length);
+  console.log(`[claude] human typing delay: ${min}–${max}ms per word`);
+
+  try {
+    const stream = client.messages.stream({
+      model: MODEL,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+    });
+
+    let fullText = "";
+
+    for await (const event of stream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        const token = event.delta.text;
+        fullText += token;
+
+        for (const chunk of splitForTyping(token)) {
+          await delayBeforeToken(chunk);
+          onToken(chunk);
+        }
+      }
+    }
+
+    if (!fullText) {
+      throw new Error("No text response from Claude");
+    }
+
+    return fullText;
+  } catch (error) {
+    logError("Claude API stream", error);
+    throw error;
   }
-
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: maxTokens,
-    system: systemPrompt,
-    messages: messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    })),
-  });
-
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("No text response from Claude");
-  }
-
-  return textBlock.text;
 }

@@ -4,6 +4,7 @@ import cors from "cors";
 import { charactersRouter } from "./routes/characters.js";
 import { conversationsRouter } from "./routes/conversations.js";
 import { chatRouter } from "./routes/chat.js";
+import { authRouter } from "./routes/auth.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
@@ -21,6 +22,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/characters", charactersRouter);
+app.use("/api/auth", authRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/chat", chatRouter);
 
@@ -37,5 +39,8 @@ app.use(
 );
 
 app.listen(PORT, () => {
+  const key = process.env.ANTHROPIC_API_KEY;
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`ANTHROPIC_API_KEY: ${key ? `loaded (${key.slice(0, 12)}...)` : "NOT SET"}`);
+  console.log("[server] dev mode: tsx watch — edits to src/ auto-reload (restart if changes don't appear)");
 });

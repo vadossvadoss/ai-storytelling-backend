@@ -1,34 +1,8 @@
-export interface MockCharacter {
-  id: string;
-  name: string;
-  description: string;
-  systemPrompt: string;
-  imageUrl: string;
-  genre: string;
-  tags: string[];
-}
+import { PrismaClient } from "@prisma/client";
 
-export interface MockMessage {
-  id: string;
-  conversationId: string;
-  role: "USER" | "ASSISTANT";
-  content: string;
-  createdAt: string;
-}
+const prisma = new PrismaClient();
 
-export interface MockConversation {
-  id: string;
-  title: string;
-  userId: string;
-  characterId: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: MockMessage[];
-}
-
-export const MOCK_USER_ID = "mock-user-1";
-
-export const mockCharacters: MockCharacter[] = [
+const characters = [
   {
     id: "char-1",
     name: "Luna the Explorer",
@@ -67,35 +41,22 @@ export const mockCharacters: MockCharacter[] = [
   },
 ];
 
-export const mockConversations: MockConversation[] = [
-  {
-    id: "conv-1",
-    title: "The Crystal Caverns",
-    userId: MOCK_USER_ID,
-    characterId: "char-1",
-    createdAt: "2026-06-01T10:00:00.000Z",
-    updatedAt: "2026-06-01T10:30:00.000Z",
-    messages: [
-      {
-        id: "msg-1",
-        conversationId: "conv-1",
-        role: "USER",
-        content: "Tell me about the crystal caverns beneath the old forest.",
-        createdAt: "2026-06-01T10:00:00.000Z",
-      },
-      {
-        id: "msg-2",
-        conversationId: "conv-1",
-        role: "ASSISTANT",
-        content:
-          "The caverns hum with a low, melodic resonance — as if the crystals themselves remember songs from before the forest grew.",
-        createdAt: "2026-06-01T10:00:30.000Z",
-      },
-    ],
-  },
-];
-
-export function parseMockCharacterId(conversationId: string): string | null {
-  const match = conversationId.match(/^mock-(.+)-\d{10,}$/);
-  return match?.[1] ?? null;
+async function main() {
+  for (const character of characters) {
+    await prisma.character.upsert({
+      where: { id: character.id },
+      update: character,
+      create: character,
+    });
+  }
+  console.log(`Seeded ${characters.length} characters`);
 }
+
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

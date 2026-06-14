@@ -23,8 +23,10 @@ model Character {
   id            String         @id @default(cuid())
   name          String
   description   String
-  personality   String
-  avatarUrl     String?
+  systemPrompt  String         @map("system_prompt") @db.Text
+  imageUrl      String?        @map("image_url")
+  genre         String         @default("fantasy")
+  tags          String[]       @default([])
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   conversations Conversation[]
