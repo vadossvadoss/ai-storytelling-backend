@@ -10,7 +10,8 @@ interface MockUser {
   id: string;
   email: string;
   name: string;
-  passwordHash: string;
+  passwordHash?: string;
+  googleId?: string;
 }
 
 const mockUsers: MockUser[] = [];
@@ -24,6 +25,12 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const googleSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  googleId: z.string().min(1),
 });
 
 function signToken(userId: string, email: string): string {
@@ -120,6 +127,11 @@ authRouter.post("/login", async (req, res) => {
         return;
       }
 
+      if (!user.passwordHash) {
+        res.status(401).json({ error: "This account uses Google sign-in" });
+        return;
+      }
+
       const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) {
         res.status(401).json({ error: "Invalid email or password" });
@@ -139,6 +151,11 @@ authRouter.post("/login", async (req, res) => {
       return;
     }
 
+    if (!user.passwordHash) {
+      res.status(401).json({ error: "This account uses Google sign-in" });
+      return;
+    }
+
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       res.status(401).json({ error: "Invalid email or password" });
@@ -153,5 +170,68 @@ authRouter.post("/login", async (req, res) => {
   } catch (error) {
     console.error("POST /api/auth/login error:", error);
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+authRouter.post("/google", async (req, res) => {
+  const parsed = googleSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid Google auth data" });
+    return;
+  }
+
+  const { email, name, googleId } = parsed.data;
+
+  try {
+    const dbConnected = await isDatabaseConnected();
+
+    if (dbConnected) {
+      let user = await prisma.user.findUnique({ where: { googleId } });
+
+      if (!user) {
+        const byEmail = await prisma.user.findUnique({ where: { email } });
+        if (byEmail) {
+          user = await prisma.user.update({
+            where: { id: byEmail.id },
+            data: { googleId, name: byEmail.name ?? name },
+          });
+        } else {
+          user = await prisma.user.create({
+            data: { email, name, googleId },
+          });
+        }
+      }
+
+      const token = signToken(user.id, user.email);
+      res.json({ token, user: formatUser(user) });
+      return;
+    }
+
+    let user =
+      mockUsers.find((u) => u.googleId === googleId) ??
+      mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
+
+    if (user) {
+      user.googleId = googleId;
+      user.name = user.name || name;
+    } else {
+      user = {
+        id: `user-${Date.now()}`,
+        email,
+        name,
+        googleId,
+      };
+      mockUsers.push(user);
+    }
+
+    const token = signToken(user.id, user.email);
+    res.json({
+      token,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
+  } catch (error) {
+    console.error("POST /api/auth/google error:", error);
+    res.status(500).json({ error: "Google authentication failed" });
   }
 });

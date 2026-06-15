@@ -103,3 +103,69 @@ conversationsRouter.post("/", async (req, res) => {
     res.status(500).json({ error: "Failed to create conversation" });
   }
 });
+
+conversationsRouter.get("/:id/messages", async (req, res) => {
+  const userId = req.user?.userId ?? MOCK_USER_ID;
+  const { id } = req.params;
+
+  console.log("[conversations] GET /:id/messages", { id, userId });
+
+  try {
+    const dbConnected = await isDatabaseConnected();
+
+    if (dbConnected) {
+      const conversation = await prisma.conversation.findFirst({
+        where: { id, userId },
+        include: {
+          messages: { orderBy: { createdAt: "asc" } },
+          character: true,
+        },
+      });
+
+      if (!conversation) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
+
+      res.json({
+        messages: conversation.messages.map((m) => ({
+          id: m.id,
+          conversationId: m.conversationId,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt.toISOString(),
+        })),
+        character: conversation.character,
+      });
+      return;
+    }
+
+    const mockConv = mockConversations.find(
+      (c) => c.id === id && c.userId === userId
+    );
+    if (!mockConv) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const character = mockCharacters.find((c) => c.id === mockConv.characterId);
+    if (!character) {
+      res.status(404).json({ error: "Character not found" });
+      return;
+    }
+
+    res.json({
+      messages: mockConv.messages.map((m) => ({
+        id: m.id,
+        conversationId: m.conversationId,
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+      })),
+      character,
+    });
+  } catch (error) {
+    console.error("GET /api/conversations/:id/messages error:", error);
+    res.status(500).json({ error: "Failed to load messages" });
+  }
+});
